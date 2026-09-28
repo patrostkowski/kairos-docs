@@ -451,6 +451,7 @@ All artifact options live under `spec.artifacts`. Common fields:
 - **netboot**, **netbootURL**: Netboot artifacts.
 - **cloudConfigRef**: Secret reference for cloud-init userdata (key typically `userdata`).
 - **diskSize**: Disk size for cloud images (e.g. `32000` for 32GB).
+- **cloudImageBootActive**: Build the cloud, Azure and GCE images with a ready `COS_STATE` partition so they boot straight into active mode, skipping the first-boot recovery reset. See [Booting directly into active](#booting-directly-into-active).
 - **grubConfig**, **bundles**, **osRelease**, **kairosRelease**: Additional AuroraBoot options. **bundles** is a list of OCI image references; each image is unpacked onto the rootfs (e.g. add-ons like Helm or k9s). Valid bundles are published in the [Kairos packages repository](https://packages.kairos.io/Kairos/) and as container images at `quay.io/kairos/packages` with tags like `helm-utils-4.1.1`, `k9s-utils-0.50.18` (use full refs, e.g. `quay.io/kairos/packages:helm-utils-4.1.1`).
 
 Example: ISO + cloud image with cloud-config:
@@ -817,8 +818,25 @@ spec:
 ```
 
 :::info Note
-The cloud image boots into recovery mode on first boot and partitions the disk. Your cloud-config can contain users and other config; see [configuration reference](/docs/reference/configuration/).
+By default the cloud image boots into recovery mode on first boot, partitions the disk and resets into active mode. Your cloud-config can contain users and other config; see [configuration reference](/docs/reference/configuration/).
 :::
+
+### Booting directly into active
+
+Set `artifacts.cloudImageBootActive: true` to build the `COS_STATE` partition (with `active.img` and the GRUB configuration) at build time. Every VM cloned from the image then boots straight into active mode, with no recovery boot and reset reboot. On first boot only `COS_PERSISTENT` is created, sized to the rest of the disk. This requires at least one of `cloudImage`, `azureImage` or `gceImage`.
+
+```yaml
+spec:
+  artifacts:
+    cloudImage: true
+    cloudImageBootActive: true
+```
+
+Trade-offs compared to the default:
+
+- The image is larger because it also carries the `COS_STATE` partition, sized for three system images plus filesystem overhead (about 12.5G instead of 4.8G for a 2.3G system image).
+- There is no `passive.img` until the first upgrade, so the GRUB fallback entry goes to recovery until then.
+- `before-reset` and `after-reset` cloud-config stages never run on the clones.
 
 ### Using the raw image (QEMU, AWS, OpenStack)
 
